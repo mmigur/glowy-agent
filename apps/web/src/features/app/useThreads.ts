@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { invalidateCache, useCachedResource } from "../../lib/cache";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";
+import { calendarCacheKey } from "./useCalendar";
 
 export interface Enhancement {
   type: string;
@@ -27,12 +28,22 @@ export interface PatternRow {
   confidence: "low" | "medium" | "high";
 }
 
+export interface SourcePost {
+  id: string;
+  username: string | null;
+  text: string;
+  postedAt: string;
+  permalink: string | null;
+  origin: "public" | "own";
+}
+
 export interface ThreadRow {
   id: string;
   status: "running" | "ready" | "scheduled" | "failed";
   research_source: "public_search" | "own_posts" | "none" | null;
   pattern_basis: "top_vs_recent" | "own_engagement" | "none" | null;
   patterns: PatternRow[];
+  source_posts: SourcePost[];
   recommended_at: string | null;
   time_basis: "own_posts" | "research" | "default" | null;
   created_at: string;
@@ -47,6 +58,31 @@ export interface Usage {
 
 const THREAD_COLUMNS =
   "id, status, research_source, pattern_basis, patterns, recommended_at, time_basis, created_at, drafts(id, text, audience, rationale, enhancements, recommended_at, status)";
+const THREAD_COLUMNS_WITH_SOURCES = `${THREAD_COLUMNS}, source_posts`;
+
+function asSourcePosts(raw: unknown): SourcePost[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (typeof item !== "object" || item === null) return [];
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.text !== "string") return [];
+    return [{
+      id: row.id,
+      username: typeof row.username === "string" ? row.username : null,
+      text: row.text,
+      postedAt: typeof row.postedAt === "string" ? row.postedAt : "",
+      permalink: typeof row.permalink === "string" ? row.permalink : null,
+      origin: row.origin === "own" ? "own" : "public",
+    } satisfies SourcePost];
+  });
+}
+
+function withSources(rows: unknown[] | null, includeStored: boolean): ThreadRow[] {
+  return (rows ?? []).map((row) => {
+    const record = row as ThreadRow & { source_posts?: unknown };
+    return { ...record, source_posts: includeStored ? asSourcePosts(record.source_posts) : [] };
+  });
+}
 
 /** Тексты ошибок функций и базы, понятные пользователю. */
 const SCHEDULE_ERRORS: Record<string, string> = {
@@ -63,14 +99,24 @@ export function useThreads() {
 
   const threads = useCachedResource<ThreadRow[]>(threadsKey, async () => {
     if (!supabase) throw new Error("Supabase is not configured.");
-    const { data, error } = await supabase
+    const full = await supabase
       .from("agent_threads")
-      .select(THREAD_COLUMNS)
+      .select(THREAD_COLUMNS_WITH_SOURCES)
       .neq("status", "failed")
       .order("created_at", { ascending: false })
       .limit(15);
-    if (error) throw new Error("Could not load your threads.");
-    return (data ?? []) as unknown as ThreadRow[];
+    if (full.error && /source_posts/.test(full.error.message)) {
+      const basic = await supabase
+        .from("agent_threads")
+        .select(THREAD_COLUMNS)
+        .neq("status", "failed")
+        .order("created_at", { ascending: false })
+        .limit(15);
+      if (basic.error) throw new Error("Could not load your threads.");
+      return withSources(basic.data, false);
+    }
+    if (full.error) throw new Error("Could not load your threads.");
+    return withSources(full.data, true);
   });
 
   const usage = useCachedResource<Usage>(usageKey, async () => {
@@ -119,10 +165,11 @@ export function useThreads() {
       const { error } = await supabase.rpc("schedule_draft", { p_draft: draftId, p_when: when.toISOString() });
       if (error) return SCHEDULE_ERRORS[error.code ?? ""] ?? "Could not schedule the post.";
       if (threadsKey) invalidateCache(threadsKey);
+      if (userId) invalidateCache(calendarCacheKey(userId));
       await threads.reload();
       return null;
     },
-    [threads, threadsKey],
+    [threads, threadsKey, userId],
   );
 
   return { threads, usage, runThread, scheduleDraft };

@@ -83,3 +83,402 @@
     animation: none;
   }
 }
+
+/* Активная галочка: зелёный круг, белая галка, лёгкое свечение. */
+.active-check {
+  display: inline-flex;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #16a34a;
+  box-shadow:
+    0 0 0 3px rgb(22 163 74 / 0.22),
+    0 0 12px rgb(22 163 74 / 0.5);
+}
+
+/* Сцены блока «Как это работает». */
+.step-scene {
+  position: relative;
+  height: 148px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background:
+    radial-gradient(circle at 18% 40%, color-mix(in srgb, var(--foreground) 7%, transparent), transparent 46%),
+    var(--muted);
+}
+
+.step-orbit {
+  position: absolute;
+  top: 34px;
+  left: 28px;
+  width: 80px;
+  height: 80px;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 40%, transparent);
+  border-radius: 999px;
+  animation: step-spin 16s linear infinite;
+}
+
+.step-core {
+  position: absolute;
+  inset: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  animation: step-spin 16s linear infinite reverse;
+}
+
+.step-sat {
+  position: absolute;
+  top: -5px;
+  left: 34px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--foreground);
+}
+
+.step-sat-2 {
+  top: 34px;
+  left: -5px;
+  opacity: 0.55;
+}
+
+.step-sat-3 {
+  top: auto;
+  bottom: 6px;
+  left: 58px;
+  width: 7px;
+  height: 7px;
+  opacity: 0.4;
+}
+
+.step-bridge {
+  position: absolute;
+  top: 72px;
+  left: 116px;
+  width: 56px;
+  height: 1px;
+  overflow: hidden;
+  background: var(--border-strong);
+}
+
+.step-bridge span {
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: var(--foreground);
+  animation: step-dash 1.8s ease-in-out infinite;
+}
+
+.step-account {
+  position: absolute;
+  top: 40px;
+  right: 28px;
+  display: grid;
+  width: 92px;
+  grid-template-columns: 22px 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.step-avatar {
+  grid-row: span 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--foreground);
+}
+
+.step-line {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+
+.step-line-a {
+  width: 100%;
+  animation: step-grow 2.4s ease-in-out infinite;
+}
+
+.step-line-b {
+  width: 68%;
+  animation: step-grow 2.4s ease-in-out infinite;
+  animation-delay: 0.2s;
+}
+
+.step-options {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 28px;
+}
+
+.step-option {
+  display: flex;
+  height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--background);
+  padding: 0 10px;
+  animation: step-pick 3.6s ease-in-out infinite;
+}
+
+.step-option-bar {
+  height: 6px;
+  width: 46%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
+.step-option-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgb(22 163 74 / 0.2);
+  opacity: 0;
+  animation: step-mark 3.6s ease-in-out infinite;
+}
+
+.step-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 22px 0;
+  animation: step-feed 9s linear infinite;
+}
+
+.step-post {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  padding: 8px 10px;
+}
+
+.step-post-at {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.step-post-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.step-post-copy i {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.step-scan {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 14%, transparent), transparent);
+  animation: step-scan 2.8s ease-in-out infinite;
+}
+
+.step-cal {
+  position: absolute;
+  top: 28px;
+  left: 28px;
+  display: grid;
+  width: 116px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.step-cal i {
+  height: 18px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.step-cal-hot {
+  background: var(--foreground) !important;
+  animation: step-pulse 2.2s ease-in-out infinite;
+}
+
+.step-chip {
+  position: absolute;
+  top: 46px;
+  right: 24px;
+  display: flex;
+  width: 132px;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--background);
+  padding: 10px;
+  animation: step-fly 3.2s ease-in-out infinite;
+}
+
+.step-chip-at {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.step-chip-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.step-chip-lines i {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+
+.step-chip-lines i:last-child {
+  width: 62%;
+}
+
+@keyframes step-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes step-dash {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+@keyframes step-grow {
+  0%,
+  100% {
+    transform: scaleX(0.72);
+    transform-origin: left;
+  }
+  50% {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+@keyframes step-pick {
+  0%,
+  18%,
+  100% {
+    border-color: var(--border-strong);
+  }
+  35%,
+  70% {
+    border-color: var(--foreground);
+  }
+}
+
+@keyframes step-mark {
+  0%,
+  22%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  40%,
+  68% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes step-feed {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+@keyframes step-scan {
+  0% {
+    transform: translateX(-30%);
+  }
+  100% {
+    transform: translateX(380%);
+  }
+}
+
+@keyframes step-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.86);
+  }
+}
+
+@keyframes step-fly {
+  0%,
+  100% {
+    transform: translate(10px, 8px);
+  }
+  45% {
+    transform: translate(-18px, 18px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-orbit,
+  .step-core,
+  .step-bridge span,
+  .step-line,
+  .step-option,
+  .step-option-mark,
+  .step-feed,
+  .step-scan,
+  .step-cal-hot,
+  .step-chip {
+    animation: none;
+  }
+
+  .step-option-mark {
+    opacity: 1;
+  }
+}

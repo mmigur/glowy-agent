@@ -3,30 +3,25 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { appCopy, tError } from "../../lib/app-copy";
+import { fill, useI18n } from "../../lib/i18n";
 import { useSocialAccounts, type SocialAccountRow } from "./useSocialAccounts";
 
 /** Какие платформы уже умеют подключаться. X добавится в Phase 6. */
 const CONNECTABLE: Record<Platform, boolean> = { threads: true, x: false };
 
-const CONNECT_ERRORS: Record<string, string> = {
-  denied: "Authorization was cancelled. Nothing was connected.",
-  invalid: "The return link was incomplete. Start the connection again.",
-  state: "The connection attempt expired or was already used. Start again.",
-  account_taken: "This Threads account is already connected to another user.",
-  exchange: "Threads rejected the authorization. Check the app settings in Meta and try again.",
-  config: "The server is missing required secrets. See the setup notes in the README.",
-};
-
-type Notice = { tone: "ok" | "error"; text: string };
+type Notice = { tone: "ok" | "error"; code: string };
 
 function noticeFromParams(params: URLSearchParams): Notice | null {
   const error = params.get("connect_error");
-  if (error) return { tone: "error", text: CONNECT_ERRORS[error] ?? "The connection failed. Try again." };
-  if (params.get("connected") === "threads") return { tone: "ok", text: "Threads account connected." };
+  if (error) return { tone: "error", code: error };
+  if (params.get("connected") === "threads") return { tone: "ok", code: "connected" };
   return null;
 }
 
 export function ConnectionsSection() {
+  const { locale } = useI18n();
+  const copy = appCopy[locale].connect;
   const { state, reload, connectThreads, disconnect } = useSocialAccounts();
   const [params, setParams] = useSearchParams();
   const [notice, setNotice] = useState<Notice | null>(() => noticeFromParams(params));
@@ -52,7 +47,7 @@ export function ConnectionsSection() {
     const message = await connectThreads();
     // При успехе страница уходит на Threads. Сюда доходим только при ошибке.
     if (message) {
-      setNotice({ tone: "error", text: message });
+      setNotice({ tone: "error", code: message });
       setBusy(null);
     }
   }
@@ -64,12 +59,23 @@ export function ConnectionsSection() {
     }
     setBusy(account.id);
     const message = await disconnect(account.id);
-    setNotice(message ? { tone: "error", text: message } : { tone: "ok", text: `@${account.username} disconnected.` });
+    setNotice(message ? { tone: "error", code: message } : { tone: "ok", code: `disconnected:${account.username}` });
     setConfirming(null);
     setBusy(null);
   }
 
   const accounts = state.status === "ready" ? state.accounts : [];
+  const noticeText = notice
+    ? notice.code.startsWith("disconnected:")
+      ? fill(copy.disconnected, { name: notice.code.slice("disconnected:".length) })
+      : notice.code === "connected"
+        ? copy.connectedOk
+        : (copy.errors[notice.code as keyof typeof copy.errors] ?? (notice.tone === "error" ? tError(notice.code, locale) : notice.code))
+    : null;
+  const notes: Record<Platform, { publish: string; research: string }> = {
+    threads: { publish: copy.threadsPublish, research: copy.threadsResearch },
+    x: { publish: copy.xPublish, research: copy.xResearch },
+  };
 
   return (
     <div>
@@ -80,13 +86,13 @@ export function ConnectionsSection() {
             notice.tone === "error" ? "border-danger text-danger" : "border-border-strong"
           }`}
         >
-          {notice.text}
+          {noticeText}
         </p>
       ) : null}
 
       {state.status === "error" ? (
         <p role="alert" className="mb-3 text-sm text-danger">
-          {state.message}
+          {tError(state.message, locale)}
         </p>
       ) : null}
 
@@ -101,20 +107,20 @@ export function ConnectionsSection() {
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{cap.displayName}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{cap.publish.note}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Research: {cap.publicSearch.note}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{notes[platform].publish}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{copy.research}: {notes[platform].research}</p>
                 </div>
                 {connected.length === 0 ? (
                   <div className="flex shrink-0 flex-col items-end gap-2">
-                    <Badge tone="muted">{state.status === "loading" ? "Loading" : "Not connected"}</Badge>
+                    <Badge tone="muted">{state.status === "loading" ? copy.loading : copy.notConnected}</Badge>
                     <Button
                       size="sm"
                       variant="outline"
                       disabled={!canConnect || state.status === "loading" || busy === platform}
-                      title={canConnect ? undefined : "X connection is not in this build yet"}
+                      title={canConnect ? undefined : copy.xLater}
                       onClick={() => void onConnect(platform)}
                     >
-                      {busy === platform ? "Redirecting…" : "Connect"}
+                      {busy === platform ? copy.redirecting : copy.connect}
                     </Button>
                   </div>
                 ) : null}
@@ -133,13 +139,13 @@ export function ConnectionsSection() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {account.status === "active" ? (
-                      <Badge tone="solid">Connected</Badge>
+                      <Badge tone="solid">{copy.connected}</Badge>
                     ) : (
-                      <Badge tone="outline">Needs reconnect</Badge>
+                      <Badge tone="outline">{copy.needsReconnect}</Badge>
                     )}
                     {account.status !== "active" && canConnect ? (
                       <Button size="sm" variant="outline" disabled={busy === platform} onClick={() => void onConnect(platform)}>
-                        Reconnect
+                        {copy.reconnect}
                       </Button>
                     ) : null}
                     <Button
@@ -149,7 +155,7 @@ export function ConnectionsSection() {
                       onClick={() => void onDisconnect(account)}
                       onBlur={() => setConfirming(null)}
                     >
-                      {confirming === account.id ? "Confirm disconnect" : "Disconnect"}
+                      {confirming === account.id ? copy.confirmDisconnect : copy.disconnect}
                     </Button>
                   </div>
                 </div>

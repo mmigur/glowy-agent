@@ -25,6 +25,7 @@ export interface FoundPost {
   text: string;
   postedAt: string;
   username: string | null;
+  permalink: string | null;
 }
 
 /**
@@ -42,7 +43,7 @@ export async function keywordSearch(
   url.searchParams.set("search_type", input.type);
   url.searchParams.set("media_type", "TEXT");
   url.searchParams.set("limit", String(input.limit ?? 25));
-  url.searchParams.set("fields", "id,text,timestamp,username");
+  url.searchParams.set("fields", "id,text,timestamp,username,permalink");
   if (input.sinceUnix) url.searchParams.set("since", String(input.sinceUnix));
   url.searchParams.set("access_token", input.accessToken);
   const body = await readBody(await fetchFn(url));
@@ -51,7 +52,13 @@ export async function keywordSearch(
     if (typeof d !== "object" || d === null) return [];
     const r = d as Record<string, unknown>;
     if (typeof r.id !== "string" || typeof r.text !== "string" || typeof r.timestamp !== "string") return [];
-    return [{ id: r.id, text: r.text, postedAt: r.timestamp, username: typeof r.username === "string" ? r.username : null }];
+    return [{
+      id: r.id,
+      text: r.text,
+      postedAt: r.timestamp,
+      username: typeof r.username === "string" ? r.username : null,
+      permalink: typeof r.permalink === "string" ? r.permalink : null,
+    }];
   });
 }
 
@@ -61,6 +68,8 @@ export function isOwnOnly(posts: FoundPost[], ownUsername: string): boolean {
 }
 
 export interface OwnPostMetrics {
+  id: string;
+  permalink: string | null;
   text: string;
   postedAt: string;
   views: number | null;
@@ -73,7 +82,7 @@ export interface OwnPostMetrics {
 /** Последние посты пользователя с метриками. Метрика, которую Threads не вернул, остаётся null (не 0). */
 export async function fetchOwnPostsWithMetrics(fetchFn: FetchFn, accessToken: string, limit = 25): Promise<OwnPostMetrics[]> {
   const listUrl = new URL(`${THREADS_GRAPH}/v1.0/me/threads`);
-  listUrl.searchParams.set("fields", "id,text,timestamp,media_type");
+  listUrl.searchParams.set("fields", "id,text,timestamp,media_type,permalink");
   listUrl.searchParams.set("limit", String(limit));
   listUrl.searchParams.set("access_token", accessToken);
   const list = await readBody(await fetchFn(listUrl));
@@ -81,7 +90,7 @@ export async function fetchOwnPostsWithMetrics(fetchFn: FetchFn, accessToken: st
     if (typeof d !== "object" || d === null) return [];
     const r = d as Record<string, unknown>;
     return typeof r.id === "string" && typeof r.text === "string" && r.text.trim() && typeof r.timestamp === "string"
-      ? [{ id: r.id, text: r.text, postedAt: r.timestamp }]
+      ? [{ id: r.id, text: r.text, postedAt: r.timestamp, permalink: typeof r.permalink === "string" ? r.permalink : null }]
       : [];
   });
 
@@ -103,7 +112,7 @@ export async function fetchOwnPostsWithMetrics(fetchFn: FetchFn, accessToken: st
       } catch {
         // метрики этого поста недоступны, остаются null
       }
-      return { text: it.text, postedAt: it.postedAt, views: metrics.views!, likes: metrics.likes!, replies: metrics.replies!, reposts: metrics.reposts!, quotes: metrics.quotes! };
+      return { id: it.id, permalink: it.permalink, text: it.text, postedAt: it.postedAt, views: metrics.views!, likes: metrics.likes!, replies: metrics.replies!, reposts: metrics.reposts!, quotes: metrics.quotes! };
     }),
   );
 }

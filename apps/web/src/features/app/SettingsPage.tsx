@@ -1,9 +1,12 @@
-import { ONBOARDING_QUESTIONS, summarizeAnswer } from "@growth/core";
+import { ONBOARDING_QUESTIONS } from "@growth/core";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "../../components/ui/badge";
 import { buttonVariants } from "../../components/ui/button";
 import { PRICING } from "../../lib/brand";
+import { LanguageSwitch } from "../../components/LanguageSwitch";
+import { appCopy, tError } from "../../lib/app-copy";
+import { fill, useI18n } from "../../lib/i18n";
 import { useTheme } from "../../lib/theme";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../auth/AuthProvider";
@@ -27,17 +30,20 @@ export function SettingsPage() {
   const { session } = useAuth();
   const { theme, setTheme } = useTheme();
   const { state: strategy } = useStrategy();
+  const { locale, m } = useI18n();
+  const copy = m.settings;
+  const ui = appCopy[locale];
 
   return (
     <>
-      <PageHeader title="Settings" />
+      <PageHeader title={copy.title} />
 
-      <Section title="Account">
+      <Section title={copy.account}>
         <p className="text-sm">{session?.user.email}</p>
       </Section>
 
-      <Section title="Appearance">
-        <div role="radiogroup" aria-label="Theme" className="inline-flex rounded-md border border-border-strong p-0.5">
+      <Section title={copy.appearance}>
+        <div role="radiogroup" aria-label={copy.theme} className="inline-flex rounded-md border border-border-strong p-0.5">
           {(["light", "dark"] as const).map((t) => (
             <button
               key={t}
@@ -45,56 +51,62 @@ export function SettingsPage() {
               aria-checked={theme === t}
               onClick={() => setTheme(t)}
               className={cn(
-                "h-8 rounded px-4 text-sm capitalize transition-colors",
+                "h-8 rounded px-4 text-sm transition-colors",
                 theme === t ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {t}
+              {t === "light" ? copy.light : copy.dark}
             </button>
           ))}
         </div>
       </Section>
 
-      <Section title="Content strategy" description="Answers from the setup questions. The agent uses them to choose topics and tone.">
+      <Section title={copy.language} description={copy.languageHint}>
+        <LanguageSwitch variant="full" />
+      </Section>
+
+      <Section title={copy.strategy} description={copy.strategyHint}>
         {strategy.status === "loading" ? (
           <p className="text-sm text-muted-foreground" role="status">
-            Loading…
+            {copy.loading}
           </p>
         ) : strategy.status === "error" ? (
           <p role="alert" className="text-sm text-danger">
-            {strategy.message}
+            {tError(strategy.message, locale)}
           </p>
         ) : (
           <div>
             <dl className="divide-y divide-border rounded-lg border border-border">
               {ONBOARDING_QUESTIONS.map((q) => (
                 <div key={q.id} className="grid grid-cols-[150px_1fr] gap-3 px-4 py-2.5 text-sm">
-                  <dt className="text-muted-foreground">{q.title.replace(/\?$/, "")}</dt>
+                  <dt className="text-muted-foreground">{ui.questions[q.id].title.replace(/\?$/, "")}</dt>
                   <dd className={strategy.answers[q.id].length === 0 ? "text-muted-foreground" : ""}>
-                    {summarizeAnswer(q.id, strategy.answers)}
+                    {strategy.answers[q.id].length === 0
+                      ? ui.onboard.skipped
+                      : strategy.answers[q.id].map((id) => (ui.questions[q.id].options as Record<string, string>)[id] ?? id).join(", ")}
                   </dd>
                 </div>
               ))}
             </dl>
             <Link to="/app/onboarding" className={buttonVariants({ variant: "outline", size: "sm" }) + " mt-3"}>
-              {strategy.completed ? "Edit answers" : "Answer the questions"}
+              {strategy.completed ? copy.editAnswers : copy.answerQuestions}
             </Link>
           </div>
         )}
       </Section>
 
-      <Section title="Connections" description="Accounts the agent publishes to. Connecting uses the official authorization flow.">
+      <Section title={copy.connections} description={copy.connectionsHint}>
         <ConnectionsSection />
       </Section>
 
-      <Section title="Subscription">
+      <Section title={copy.subscription}>
         <div className="rounded-lg border border-border px-4 py-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">Pro</p>
-            <Badge tone="muted">Billing not connected</Badge>
+            <Badge tone="muted">{copy.billing}</Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            ${PRICING.proPriceUsd}/month after a {PRICING.trialDays}-day free trial.
+            {fill(copy.price, { price: PRICING.proPriceUsd, days: PRICING.trialDays })}
           </p>
         </div>
       </Section>

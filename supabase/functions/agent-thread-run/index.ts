@@ -12,6 +12,37 @@ import {
   parseVariantsReport, queriesForTopics, rankHours, type DetectedPattern,
 } from "../_shared/thread-logic.ts";
 
+interface StoredSourcePost {
+  id: string;
+  username: string | null;
+  text: string;
+  postedAt: string;
+  permalink: string | null;
+  origin: "public" | "own";
+}
+
+function excerpt(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const chars = [...flat];
+  return chars.length > 240 ? `${chars.slice(0, 239).join("")}…` : flat;
+}
+
+function toSource(
+  post: { id: string; text: string; postedAt: string; username?: string | null; permalink?: string | null },
+  origin: "public" | "own",
+  fallbackUser?: string | null,
+): StoredSourcePost {
+  const username = post.username ?? fallbackUser ?? null;
+  return {
+    id: post.id,
+    username,
+    text: excerpt(post.text),
+    postedAt: post.postedAt,
+    permalink: post.permalink ?? (username ? `https://www.threads.net/@${username}` : null),
+    origin,
+  };
+}
+
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "TOKEN_ENCRYPTION_KEY"] as const;
 
 Deno.serve(async (req) => {
@@ -89,7 +120,7 @@ Deno.serve(async (req) => {
     }
     const ownScored = own.flatMap((p) => {
       const score = engagementScore(p);
-      return score === null ? [] : [{ text: p.text, postedAt: p.postedAt, score }];
+      return score === null ? [] : [{ id: p.id, text: p.text, postedAt: p.postedAt, permalink: p.permalink, score }];
     });
 
     // 4. Публичное исследование: доступно только после одобрения права threads_keyword_search.
@@ -122,17 +153,29 @@ Deno.serve(async (req) => {
     let patterns: DetectedPattern[] = [];
     let exemplars: string[] = [];
     let researchHours: number[] = [];
+    let sourcePosts: StoredSourcePost[] = [];
     if (publicAvailable && top.length >= 8 && recent.length >= 8) {
       patterns = detectTopVsRecentPatterns(top.map((p) => p.text), recent.map((p) => p.text));
       basis = "top_vs_recent";
       source = "public_search";
       exemplars = top.slice(0, 6).map((p) => p.text);
       researchHours = rankHours(top.map((p) => ({ at: p.postedAt, weight: 1 })), timeZone);
+      const seen = new Set<string>();
+      for (const post of top) {
+        if (seen.has(post.id)) continue;
+        seen.add(post.id);
+        sourcePosts.push(toSource(post, "public"));
+        if (sourcePosts.length === 8) break;
+      }
     }
     if (source === "none" && ownScored.length > 0) {
       patterns = detectOwnEngagementPatterns(ownScored);
       basis = patterns.length ? "own_engagement" : "none";
       source = "own_posts";
+      sourcePosts = [...ownScored]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map((post) => toSource(post, "own", account.username));
     }
     const ownHours = rankHours(ownScored.map((p) => ({ at: p.postedAt, weight: p.score })), timeZone);
 
@@ -169,7 +212,7 @@ Deno.serve(async (req) => {
     const { data: pending } = await admin.from("publications").select("scheduled_for").eq("user_id", userId).eq("status", "scheduled").gte("scheduled_for", new Date().toISOString());
     const slot = nextSlot({ now: new Date(), timeZone, ownHours, researchHours, taken: (pending ?? []).map((p) => new Date(p.scheduled_for)) });
 
-    // 7. Сохраняем. Тексты чужих постов не сохраняются, только производные паттерны.
+    // 7. Сохраняем паттерны и короткие выдержки постов-источников (для раскрывающегося списка).
     const { data: drafts, error: draftError } = await admin.from("drafts").insert(
       variants.map((x) => ({
         user_id: userId, account_id: account.id, thread_id: threadId, text: x.text, audience: x.angle,
@@ -178,10 +221,18 @@ Deno.serve(async (req) => {
     ).select("id, text, audience, rationale, enhancements, recommended_at, status");
     if (draftError) throw new Error(draftError.message);
 
-    await admin.from("agent_threads").update({
+    const threadPatch = {
       status: "ready", research_source: source, pattern_basis: basis, patterns,
-      recommended_at: slot.at.toISOString(), time_basis: slot.basis,
-    }).eq("id", threadId);
+      recommended_at: slot.at.toISOString(), time_basis: slot.basis, source_posts: sourcePosts,
+    };
+    const updated = await admin.from("agent_threads").update(threadPatch).eq("id", threadId);
+    if (updated.error && /source_posts/.test(updated.error.message)) {
+      const { source_posts: _ignored, ...withoutSources } = threadPatch;
+      const retry = await admin.from("agent_threads").update(withoutSources).eq("id", threadId);
+      if (retry.error) throw new Error(retry.error.message);
+    } else if (updated.error) {
+      throw new Error(updated.error.message);
+    }
 
     return json({
       thread: { id: threadId, researchSource: source, patternBasis: basis, patterns, recommendedAt: slot.at.toISOString(), timeBasis: slot.basis, timeZone },

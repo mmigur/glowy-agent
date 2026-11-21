@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthProvider } from "./features/auth/AuthProvider";
+import { LocaleProvider } from "./lib/i18n";
 import { ThemeProvider } from "./lib/theme";
 import "./index.css";
 
@@ -13,9 +14,11 @@ createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <LocaleProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </LocaleProvider>
       </AuthProvider>
     </ThemeProvider>
   </StrictMode>,
