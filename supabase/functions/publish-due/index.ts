@@ -5,7 +5,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { decryptSecret } from "../_shared/crypto.ts";
 import { json, readEnv } from "../_shared/http.ts";
 import { ThreadsApiError } from "../_shared/threads.ts";
-import { publishTextPost } from "../_shared/threads-content.ts";
+import { publishImagePost, publishTextPost } from "../_shared/threads-content.ts";
 
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "TOKEN_ENCRYPTION_KEY", "CRON_SECRET"] as const;
 const MAX_ATTEMPTS = 3;
@@ -37,18 +37,31 @@ Deno.serve(async (req) => {
   let published = 0;
   let failed = 0;
   let retried = 0;
-  for (const pub of (claimed ?? []) as { id: string; draft_id: string; account_id: string; attempts: number }[]) {
+  for (const pub of (claimed ?? []) as { id: string; draft_id: string; account_id: string; user_id: string; attempts: number }[]) {
     try {
-      const [{ data: draft }, { data: token }, { data: account }] = await Promise.all([
-        admin.from("drafts").select("text").eq("id", pub.draft_id).maybeSingle(),
+      const [draftResult, tokenResult, accountResult] = await Promise.all([
+        admin.from("drafts").select("text, image_path").eq("id", pub.draft_id).maybeSingle(),
         admin.from("social_tokens").select("access_token_enc").eq("account_id", pub.account_id).maybeSingle(),
         admin.from("social_accounts").select("status").eq("id", pub.account_id).maybeSingle(),
       ]);
+      const draft = draftResult.error && /image_path/.test(draftResult.error.message)
+        ? (await admin.from("drafts").select("text").eq("id", pub.draft_id).maybeSingle()).data
+        : draftResult.data;
+      const token = tokenResult.data;
+      const account = accountResult.data;
       if (!draft || !token || account?.status !== "active") throw new ThreadsApiError("Account or draft is no longer available", 410);
       if (/\[\[[^\]]+\]\]/.test(draft.text)) throw new ThreadsApiError("The post still has unfilled placeholders", 422);
 
       const accessToken = await decryptSecret(token.access_token_enc, v.TOKEN_ENCRYPTION_KEY);
-      const { postId } = await publishTextPost(fetch, { accessToken, text: draft.text });
+      const imagePath = typeof draft.image_path === "string" && draft.image_path.startsWith(`${pub.user_id}/`) ? draft.image_path : null;
+      let postId: string;
+      if (imagePath) {
+        const signed = await admin.storage.from("post-images").createSignedUrl(imagePath, 60 * 30);
+        if (!signed.data?.signedUrl) throw new ThreadsApiError("Could not read the attached image", 422);
+        postId = (await publishImagePost(fetch, { accessToken, text: draft.text, imageUrl: signed.data.signedUrl })).postId;
+      } else {
+        postId = (await publishTextPost(fetch, { accessToken, text: draft.text })).postId;
+      }
       await admin.from("publications").update({ status: "published", platform_post_id: postId, published_at: new Date().toISOString(), last_error: null }).eq("id", pub.id);
       await admin.from("drafts").update({ status: "published" }).eq("id", pub.draft_id);
       published++;

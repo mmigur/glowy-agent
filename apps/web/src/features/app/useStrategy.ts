@@ -1,4 +1,4 @@
-import { answersToStrategyRow, strategyRowToAnswers, type OnboardingAnswers } from "@growth/core";
+import { answersToStrategyRow, sanitizeAnswers, strategyRowToAnswers, type OnboardingAnswers } from "@growth/core";
 import { useCallback } from "react";
 import { getCached, setCache, useCachedResource } from "../../lib/cache";
 import { supabase } from "../../lib/supabase";
@@ -24,19 +24,19 @@ export function useStrategy() {
     if (!supabase || !userId) throw new Error("You are not signed in.");
     const { data, error } = await supabase
       .from("user_strategy")
-      .select("role, topics, content_types, tone, goals, posting_frequency, formats, onboarding_completed_at")
+      .select("role, topics, content_types, tone, goals, posting_frequency, formats, answers, onboarding_completed_at")
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw new Error("Could not load your strategy.");
     return {
-      answers: strategyRowToAnswers(data ?? {}),
+      answers: sanitizeAnswers(strategyRowToAnswers(data ?? {})),
       completed: Boolean(data?.onboarding_completed_at),
       hasRow: data !== null,
     };
   });
 
   const state: StrategyState = resource.data
-    ? { status: "ready", ...resource.data }
+    ? { status: "ready", ...resource.data, answers: sanitizeAnswers(resource.data.answers) }
     : resource.error
       ? { status: "error", message: resource.error }
       : { status: "loading" };

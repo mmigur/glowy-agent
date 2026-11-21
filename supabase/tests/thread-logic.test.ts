@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildThreadPrompt, detectOwnEngagementPatterns, detectTopVsRecentPatterns, extractPostFeatures,
-  findPlaceholders, nextSlot, parseVariants, queriesForTopics, rankHours, THREADS_TEXT_LIMIT,
+  findPlaceholders, nextSlot, parseVariants, pickLikedPosts, queriesForTopics, rankHours, THREADS_TEXT_LIMIT,
 } from "../functions/_shared/thread-logic.ts";
-import { engagementScore, isOwnOnly, keywordSearch, publishTextPost } from "../functions/_shared/threads-content.ts";
+import { engagementScore, isOwnOnly, keywordSearch, parseAccountInsights, publishTextPost } from "../functions/_shared/threads-content.ts";
 
 describe("features", () => {
   it("extracts features", () => {
@@ -81,8 +81,26 @@ describe("model output", () => {
     expect(findPlaceholders("a [[x]] b [[ y z ]]")).toEqual(["x", "y z"]);
     expect(findPlaceholders("none")).toEqual([]);
   });
+  it("prefers posts from 3–4 days ago with the most likes", () => {
+    const now = new Date("2026-11-21T12:00:00Z");
+    const posts = [
+      { text: "today", postedAt: "2026-11-21T08:00:00Z", likes: 100 },
+      { text: "three days", postedAt: "2026-11-18T06:00:00Z", likes: 12 },
+      { text: "four days", postedAt: "2026-11-17T12:00:00Z", likes: 40 },
+      { text: "week old", postedAt: "2026-11-14T12:00:00Z", likes: 80 },
+    ];
+    expect(pickLikedPosts(posts, now).map((post) => post.text)).toEqual(["four days", "three days"]);
+  });
+  it("widens to 2–7 days when the narrow window is empty", () => {
+    const now = new Date("2026-11-21T12:00:00Z");
+    const posts = [
+      { text: "two days", postedAt: "2026-11-19T06:00:00Z", likes: 4 },
+      { text: "five days", postedAt: "2026-11-16T06:00:00Z", likes: 9 },
+    ];
+    expect(pickLikedPosts(posts, now).map((post) => post.text)).toEqual(["five days", "two days"]);
+  });
   it("builds a prompt with limits and without inventing patterns", () => {
-    const p = buildThreadPrompt({ language: "English", strategy: { role: "founder", topics: ["startups"], contentTypes: [], tone: null, goals: [], formats: [] }, patterns: [], patternBasis: "none", exemplars: [], avoid: [], variants: 3 });
+    const p = buildThreadPrompt({ language: "English", strategy: { role: "founder", topics: ["startups"], audience: [], contentTypes: [], tone: null, goals: [], formats: [] }, patterns: [], patternBasis: "none", exemplars: [], avoid: [], variants: 3 });
     expect(p.system).toContain("500");
     expect(p.user).toContain("No measured patterns");
   });
@@ -107,6 +125,24 @@ describe("threads content api", () => {
     const r = await publishTextPost(f as unknown as typeof fetch, { accessToken: "t", text: "hello" });
     expect(r.postId).toBe("p1");
     expect(String((f.mock.calls[1] as unknown[])[0])).toContain("threads_publish");
+  });
+  it("parses views, totals and follower breakdowns", () => {
+    const parsed = parseAccountInsights({
+      data: [
+        { name: "views", values: [{ value: 10, end_time: "2026-11-01T00:00:00+0000" }, { value: 20, end_time: "2026-11-02T00:00:00+0000" }] },
+        { name: "likes", total_value: { value: 4 } },
+        {
+          name: "follower_demographics",
+          total_value: { breakdowns: [{ dimension_keys: ["country"], results: [{ dimension_values: ["RU"], value: 21 }, { dimension_values: ["IN"], value: 12 }] }] },
+        },
+        { name: "clicks", link_total_values: [{ value: 3, link_url: "https://example.com" }, { value: 1, link_url: "https://example.com/b" }] },
+      ],
+    });
+    expect(parsed.series.views).toHaveLength(2);
+    expect(parsed.totals.views).toBe(30);
+    expect(parsed.totals.likes).toBe(4);
+    expect(parsed.breakdown.map((slice) => slice.label)).toEqual(["RU", "IN"]);
+    expect(parsed.clicks).toBe(4);
   });
   it("keeps missing metrics null in scoring", () => {
     expect(engagementScore({ text: "", postedAt: "", views: null, likes: 5, replies: null, reposts: null, quotes: null })).toBeNull();

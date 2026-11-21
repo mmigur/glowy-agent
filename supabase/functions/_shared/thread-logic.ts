@@ -109,6 +109,29 @@ function median(values: number[]): number {
 }
 
 const MIN_LIFT = 1.15;
+const DAY_MS = 86_400_000;
+
+export interface LikedPost {
+  text: string;
+  postedAt: string;
+  likes: number | null;
+}
+
+/**
+ * Посты, которым уже 3–4 дня и у которых есть лайки: к этому моменту видно, что зашло.
+ * Если в узком окне пусто, берём посты возрастом 2–7 дней, тоже по лайкам.
+ */
+export function pickLikedPosts<T extends LikedPost>(posts: T[], now: Date, limit = 6): T[] {
+  const liked = posts.filter((p) => typeof p.likes === "number" && p.likes > 0 && p.text.trim() && !Number.isNaN(new Date(p.postedAt).getTime()));
+  const ageDays = (p: T) => (now.getTime() - new Date(p.postedAt).getTime()) / DAY_MS;
+  const between = (min: number, max: number) => liked.filter((p) => {
+    const age = ageDays(p);
+    return age >= min && age <= max;
+  });
+  const narrow = between(3, 4);
+  const pool = narrow.length > 0 ? narrow : between(2, 7);
+  return [...pool].sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0)).slice(0, limit);
+}
 
 /**
  * Сравнивает посты из выдачи TOP с постами из выдачи RECENT по тем же запросам.
@@ -269,7 +292,7 @@ export function findPlaceholders(text: string): string[] {
 
 export interface PromptInput {
   language: string;
-  strategy: { role: string | null; topics: string[]; contentTypes: string[]; tone: string | null; goals: string[]; formats: string[] };
+  strategy: { role: string | null; topics: string[]; audience: string[]; contentTypes: string[]; tone: string | null; goals: string[]; formats: string[] };
   patterns: DetectedPattern[];
   patternBasis: "top_vs_recent" | "own_engagement" | "none";
   /** Образцы сильных постов (тексты берутся из выдачи в момент запроса и не сохраняются). */
@@ -293,12 +316,12 @@ export function buildThreadPrompt(input: PromptInput): { system: string; user: s
   ].join("\n");
   const user = [
     `Language: ${input.language}`,
-    `Author: role=${s.role ?? "unspecified"}; topics=${s.topics.join(", ") || "unspecified"}; content types=${s.contentTypes.join(", ") || "unspecified"}; tone=${s.tone ?? "unspecified"}; goals=${s.goals.join(", ") || "unspecified"}; formats=${s.formats.join(", ") || "unspecified"}.`,
+    `Author: role=${s.role ?? "unspecified"}; topics=${s.topics.join(", ") || "unspecified"}; audience=${s.audience.join(", ") || "unspecified"}; content types=${s.contentTypes.join(", ") || "unspecified"}; tone=${s.tone ?? "unspecified"}; goals=${s.goals.join(", ") || "unspecified"}; formats=${s.formats.join(", ") || "unspecified"}.`,
     "",
     `Measured patterns (${input.patternBasis === "top_vs_recent" ? "features over-represented in top-ranked posts vs recent posts on the same topics" : input.patternBasis === "own_engagement" ? "features of the author's own best-performing posts" : "none"}):`,
     patternLines,
     input.exemplars.length ? `\nExample strong posts (structure only, do not copy):\n${input.exemplars.slice(0, 6).map((t, i) => `${i + 1}. ${t.replace(/\s+/g, " ").slice(0, 280)}`).join("\n")}` : "",
-    input.avoid.length ? `\nDo not repeat these earlier posts:\n${input.avoid.slice(0, 6).map((t) => `- ${t.replace(/\s+/g, " ").slice(0, 120)}`).join("\n")}` : "",
+    input.avoid.length ? `\nDo not repeat, paraphrase, or reuse the angle of these posts the author already published or scheduled:\n${input.avoid.slice(0, 12).map((t) => `- ${t.replace(/\s+/g, " ").slice(0, 220)}`).join("\n")}` : "",
     "",
     `Write ${input.variants} distinct variants of ONE post idea. Each variant takes a different angle and applies the measured patterns where they fit.`,
     'For each variant add "enhancements": 1-3 concrete ways to make it more viral using LIVE content from the author\'s real day (real number, behind-the-scenes detail, screenshot, timely hook tied to something happening now, a sincere question). Each enhancement is {"type": one of live_data|behind_the_scenes|screenshot|timely_hook|question|story_detail, "instruction": what exactly the author should add}.',

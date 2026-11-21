@@ -80,8 +80,8 @@ export function SettingsPage() {
               {ONBOARDING_QUESTIONS.map((q) => (
                 <div key={q.id} className="grid grid-cols-[150px_1fr] gap-3 px-4 py-2.5 text-sm">
                   <dt className="text-muted-foreground">{ui.questions[q.id].title.replace(/\?$/, "")}</dt>
-                  <dd className={strategy.answers[q.id].length === 0 ? "text-muted-foreground" : ""}>
-                    {strategy.answers[q.id].length === 0
+                  <dd className={(strategy.answers[q.id]?.length ?? 0) === 0 ? "text-muted-foreground" : ""}>
+                    {(strategy.answers[q.id]?.length ?? 0) === 0
                       ? ui.onboard.skipped
                       : strategy.answers[q.id].map((id) => (ui.questions[q.id].options as Record<string, string>)[id] ?? id).join(", ")}
                   </dd>

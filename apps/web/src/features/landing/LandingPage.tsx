@@ -154,6 +154,9 @@ export function LandingPage() {
       <footer className="border-t border-border">
         <div className={cn(container, "flex h-16 items-center justify-between gap-4 text-sm text-muted-foreground")}>
           <span>{PRODUCT_NAME}</span>
+          <a href="https://t.me/miguroff" target="_blank" rel="noreferrer" className="hover:text-foreground">
+            {copy.founder}
+          </a>
           <span className="text-right">{copy.footerApi}</span>
         </div>
       </footer>

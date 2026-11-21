@@ -124,6 +124,114 @@ export function engagementScore(m: OwnPostMetrics): number | null {
   return weighted / m.views;
 }
 
+/** Публикует пост с картинкой. imageUrl должен быть доступен серверам Threads по HTTPS. */
+export async function publishImagePost(fetchFn: FetchFn, input: { accessToken: string; text: string; imageUrl: string }): Promise<{ postId: string }> {
+  const create = new URL(`${THREADS_GRAPH}/v1.0/me/threads`);
+  const created = await readBody(
+    await fetchFn(create, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ media_type: "IMAGE", image_url: input.imageUrl, text: input.text, access_token: input.accessToken }),
+    }),
+  );
+  if (typeof created.id !== "string") throw new ThreadsApiError("Threads did not return a creation id", 502);
+  const publish = new URL(`${THREADS_GRAPH}/v1.0/me/threads_publish`);
+  const published = await readBody(
+    await fetchFn(publish, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ creation_id: created.id, access_token: input.accessToken }),
+    }),
+  );
+  if (typeof published.id !== "string") throw new ThreadsApiError("Threads did not return a post id", 502);
+  return { postId: published.id };
+}
+
+export interface InsightPoint {
+  end: string;
+  value: number;
+}
+
+export interface InsightSlice {
+  label: string;
+  value: number;
+}
+
+export interface AccountInsights {
+  series: Record<string, InsightPoint[]>;
+  totals: Record<string, number>;
+  breakdown: InsightSlice[];
+  clicks: number;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
+}
+
+/** Разбирает ответ /threads_insights: ряд по дням, суммы, разбивку и клики по ссылкам. */
+export function parseAccountInsights(body: unknown): AccountInsights {
+  const root = asRecord(body);
+  const data = Array.isArray(root?.data) ? root.data : [];
+  const series: Record<string, InsightPoint[]> = {};
+  const totals: Record<string, number> = {};
+  let breakdown: InsightSlice[] = [];
+  let clicks = 0;
+
+  for (const item of data) {
+    const row = asRecord(item);
+    if (!row || typeof row.name !== "string") continue;
+    const values = Array.isArray(row.values) ? row.values : [];
+    const points = values.flatMap((entry): InsightPoint[] => {
+      const point = asRecord(entry);
+      if (!point || typeof point.value !== "number" || typeof point.end_time !== "string") return [];
+      return [{ end: point.end_time, value: point.value }];
+    });
+    if (points.length > 0) series[row.name] = points;
+
+    const total = asRecord(row.total_value);
+    if (total && typeof total.value === "number") totals[row.name] = total.value;
+    else if (points.length > 0 && totals[row.name] === undefined) totals[row.name] = points.reduce((sum, point) => sum + point.value, 0);
+
+    const breakdowns = Array.isArray(total?.breakdowns) ? total.breakdowns : [];
+    const results = asRecord(breakdowns[0])?.results;
+    if (Array.isArray(results)) {
+      breakdown = results.flatMap((entry): InsightSlice[] => {
+        const slice = asRecord(entry);
+        const labels = Array.isArray(slice?.dimension_values) ? slice.dimension_values : [];
+        const label = labels.find((part): part is string => typeof part === "string");
+        if (!label || typeof slice?.value !== "number") return [];
+        return [{ label, value: slice.value }];
+      });
+    } else if (total && asRecord(total.value)) {
+      breakdown = Object.entries(total.value as Record<string, unknown>).flatMap(([label, value]): InsightSlice[] =>
+        typeof value === "number" ? [{ label, value }] : [],
+      );
+    }
+
+    const links = Array.isArray(row.link_total_values) ? row.link_total_values : [];
+    for (const link of links) {
+      const record = asRecord(link);
+      if (record && typeof record.value === "number") clicks += record.value;
+    }
+  }
+
+  return { series, totals, breakdown, clicks };
+}
+
+/** Читает метрики профиля. breakdown нужен только для follower_demographics. */
+export async function fetchAccountInsights(
+  fetchFn: FetchFn,
+  input: { accessToken: string; metric: string; since?: number; until?: number; breakdown?: "country" | "city" | "age" | "gender" },
+): Promise<AccountInsights> {
+  const url = new URL(`${THREADS_GRAPH}/v1.0/me/threads_insights`);
+  url.searchParams.set("metric", input.metric);
+  if (input.since !== undefined) url.searchParams.set("since", String(input.since));
+  if (input.until !== undefined) url.searchParams.set("until", String(input.until));
+  if (input.breakdown) url.searchParams.set("breakdown", input.breakdown);
+  url.searchParams.set("access_token", input.accessToken);
+  return parseAccountInsights(await readBody(await fetchFn(url)));
+}
+
 /** Публикует текстовый пост: создаёт контейнер, затем публикует. Возвращает идентификатор поста. */
 export async function publishTextPost(fetchFn: FetchFn, input: { accessToken: string; text: string }): Promise<{ postId: string }> {
   const create = new URL(`${THREADS_GRAPH}/v1.0/me/threads`);

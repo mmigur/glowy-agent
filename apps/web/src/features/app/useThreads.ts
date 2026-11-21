@@ -17,6 +17,7 @@ export interface DraftRow {
   rationale: string | null;
   enhancements: Enhancement[];
   recommended_at: string | null;
+  image_path: string | null;
   status: "suggested" | "draft" | "scheduled" | "rejected" | "published";
 }
 
@@ -56,9 +57,10 @@ export interface Usage {
   resetsAt: string;
 }
 
+const DRAFT_FIELDS = "id, text, audience, rationale, enhancements, recommended_at, status";
 const THREAD_COLUMNS =
-  "id, status, research_source, pattern_basis, patterns, recommended_at, time_basis, created_at, drafts(id, text, audience, rationale, enhancements, recommended_at, status)";
-const THREAD_COLUMNS_WITH_SOURCES = `${THREAD_COLUMNS}, source_posts`;
+  `id, status, research_source, pattern_basis, patterns, recommended_at, time_basis, created_at, drafts(${DRAFT_FIELDS})`;
+const THREAD_COLUMNS_WITH_SOURCES = `${THREAD_COLUMNS.replace(DRAFT_FIELDS, `${DRAFT_FIELDS}, image_path`)}, source_posts`;
 
 function asSourcePosts(raw: unknown): SourcePost[] {
   if (!Array.isArray(raw)) return [];
@@ -80,7 +82,11 @@ function asSourcePosts(raw: unknown): SourcePost[] {
 function withSources(rows: unknown[] | null, includeStored: boolean): ThreadRow[] {
   return (rows ?? []).map((row) => {
     const record = row as ThreadRow & { source_posts?: unknown };
-    return { ...record, source_posts: includeStored ? asSourcePosts(record.source_posts) : [] };
+    return {
+      ...record,
+      source_posts: includeStored ? asSourcePosts(record.source_posts) : [],
+      drafts: (record.drafts ?? []).map((draft) => ({ ...draft, image_path: draft.image_path ?? null })),
+    };
   });
 }
 
@@ -105,7 +111,7 @@ export function useThreads() {
       .neq("status", "failed")
       .order("created_at", { ascending: false })
       .limit(15);
-    if (full.error && /source_posts/.test(full.error.message)) {
+    if (full.error && /source_posts|image_path/.test(full.error.message)) {
       const basic = await supabase
         .from("agent_threads")
         .select(THREAD_COLUMNS)
@@ -157,6 +163,39 @@ export function useThreads() {
     return null;
   }, [refreshAll]);
 
+  const setDraftImage = useCallback(
+    async (draftId: string, file: File | null): Promise<string | null> => {
+      if (!supabase || !userId) return "Supabase is not configured.";
+      if (file && !["image/jpeg", "image/png", "image/webp"].includes(file.type)) return "Use a JPEG, PNG or WebP image.";
+      if (file && file.size > 8_000_000) return "The image must be under 8 MB.";
+      const path = `${userId}/${draftId}`;
+      if (file) {
+        const uploaded = await supabase.storage.from("post-images").upload(path, file, { upsert: true, contentType: file.type });
+        if (uploaded.error) return "Could not upload the image.";
+      } else {
+        await supabase.storage.from("post-images").remove([path]);
+      }
+      const saved = await supabase.from("drafts").update({ image_path: file ? path : null }).eq("id", draftId);
+      if (saved.error) return "Could not save the image on this post.";
+      if (threadsKey) invalidateCache(threadsKey);
+      await threads.reload();
+      return null;
+    },
+    [threads, threadsKey, userId],
+  );
+
+  const discardThread = useCallback(
+    async (threadId: string): Promise<string | null> => {
+      if (!supabase) return "Supabase is not configured.";
+      const saved = await supabase.from("drafts").update({ status: "rejected" }).eq("thread_id", threadId).eq("status", "suggested");
+      if (saved.error) return "Could not decline this generation.";
+      if (threadsKey) invalidateCache(threadsKey);
+      await threads.reload();
+      return null;
+    },
+    [threads, threadsKey],
+  );
+
   const scheduleDraft = useCallback(
     async (draftId: string, text: string, when: Date): Promise<string | null> => {
       if (!supabase) return "Supabase is not configured.";
@@ -172,5 +211,5 @@ export function useThreads() {
     [threads, threadsKey, userId],
   );
 
-  return { threads, usage, runThread, scheduleDraft };
+  return { threads, usage, runThread, scheduleDraft, setDraftImage, discardThread };
 }

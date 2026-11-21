@@ -1,7 +1,8 @@
-import { ONBOARDING_QUESTIONS, emptyAnswers, toggleAnswer, type OnboardingAnswers } from "@growth/core";
+import { ONBOARDING_QUESTIONS, emptyAnswers, sanitizeAnswers, toggleAnswer, type OnboardingAnswers } from "@growth/core";
 import { ActiveCheck } from "../../components/ActiveCheck";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { LanguageSwitch } from "../../components/LanguageSwitch";
 import { Logo } from "../../components/Logo";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { Button } from "../../components/ui/button";
@@ -26,7 +27,7 @@ export function OnboardingPage() {
   useEffect(() => {
     if (state.status === "ready" && !initialised.current) {
       initialised.current = true;
-      setAnswers(state.answers);
+      setAnswers(sanitizeAnswers(state.answers));
     }
   }, [state]);
 
@@ -56,7 +57,7 @@ export function OnboardingPage() {
   const total = ONBOARDING_QUESTIONS.length;
   const question = ONBOARDING_QUESTIONS[step];
   if (!question) return null;
-  const selected = answers[question.id];
+  const selected = answers[question.id] ?? [];
   const isLast = step === total - 1;
   const editing = state.completed;
 
@@ -89,9 +90,10 @@ export function OnboardingPage() {
       <header className="flex h-14 items-center justify-between border-b border-border px-6">
         <Logo />
         <div className="flex items-center gap-1">
+          <LanguageSwitch />
           <ThemeToggle />
           <Link
-            to="/app"
+            to={editing ? "/app" : "/"}
             className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             {copy.exit}

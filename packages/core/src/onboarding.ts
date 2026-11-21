@@ -4,7 +4,7 @@
  * Любой вопрос можно пропустить и изменить позже.
  */
 
-export const QUESTION_IDS = ["role", "topics", "contentTypes", "tone", "goals", "frequency", "formats"] as const;
+export const QUESTION_IDS = ["role", "topics", "audience", "contentTypes", "tone", "goals", "frequency", "formats"] as const;
 export type QuestionId = (typeof QUESTION_IDS)[number];
 
 export interface QuestionOption {
@@ -52,6 +52,22 @@ export const ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
       { id: "business_investing", label: "Business and investing" },
       { id: "life_experiences", label: "Life and experiences" },
       { id: "other", label: "Other" },
+    ],
+  },
+  {
+    id: "audience",
+    title: "Who are you writing for?",
+    hint: "Pick as many as you like. Drafts speak to these people.",
+    kind: "multi",
+    options: [
+      { id: "founders", label: "Founders" },
+      { id: "developers", label: "Developers" },
+      { id: "marketers", label: "Marketers" },
+      { id: "investors", label: "Investors" },
+      { id: "creators", label: "Creators" },
+      { id: "operators", label: "Operators and managers" },
+      { id: "students", label: "Students" },
+      { id: "general", label: "A general audience" },
     ],
   },
   {
@@ -132,7 +148,7 @@ export const ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
 export type OnboardingAnswers = Record<QuestionId, string[]>;
 
 export function emptyAnswers(): OnboardingAnswers {
-  return { role: [], topics: [], contentTypes: [], tone: [], goals: [], frequency: [], formats: [] };
+  return { role: [], topics: [], audience: [], contentTypes: [], tone: [], goals: [], frequency: [], formats: [] };
 }
 
 export function getQuestion(id: QuestionId): OnboardingQuestion {
@@ -149,7 +165,7 @@ export function toggleAnswer(question: OnboardingQuestion, current: readonly str
 }
 
 export function answeredCount(answers: OnboardingAnswers): number {
-  return QUESTION_IDS.filter((id) => answers[id].length > 0).length;
+  return QUESTION_IDS.filter((id) => (answers[id]?.length ?? 0) > 0).length;
 }
 
 /** Оставляет только известные варианты и соблюдает single/multi. Защищает от мусора в БД. */
@@ -200,8 +216,10 @@ export function strategyRowToAnswers(row: {
   goals?: string[] | null;
   posting_frequency?: string | null;
   formats?: string[] | null;
+  answers?: unknown;
 }): OnboardingAnswers {
-  return sanitizeAnswers({
+  const stored = row.answers && typeof row.answers === "object" ? sanitizeAnswers(row.answers as Partial<Record<QuestionId, unknown>>) : emptyAnswers();
+  const fromColumns = sanitizeAnswers({
     role: row.role ? [row.role] : [],
     topics: row.topics ?? [],
     contentTypes: row.content_types ?? [],
@@ -210,6 +228,8 @@ export function strategyRowToAnswers(row: {
     frequency: row.posting_frequency ? [row.posting_frequency] : [],
     formats: row.formats ?? [],
   });
+  // Аудитория живёт в JSON answers: отдельной колонки под неё нет.
+  return { ...stored, ...fromColumns, audience: stored.audience };
 }
 
 export function optionLabel(questionId: QuestionId, optionId: string): string {

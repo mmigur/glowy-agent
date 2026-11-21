@@ -8,8 +8,8 @@ import { askLlm, LlmError, resolveLlmConfig } from "../_shared/llm.ts";
 import { ThreadsApiError } from "../_shared/threads.ts";
 import { engagementScore, fetchOwnPostsWithMetrics, isOwnOnly, keywordSearch, type FoundPost } from "../_shared/threads-content.ts";
 import {
-  buildThreadPrompt, detectOwnEngagementPatterns, detectTopVsRecentPatterns, isValidTimeZone, nextSlot,
-  parseVariantsReport, queriesForTopics, rankHours, type DetectedPattern,
+  buildThreadPrompt,   detectOwnEngagementPatterns, detectTopVsRecentPatterns, isValidTimeZone, nextSlot,
+  parseVariantsReport, pickLikedPosts, queriesForTopics, rankHours, type DetectedPattern,
 } from "../_shared/thread-logic.ts";
 
 interface StoredSourcePost {
@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
   }
 
   // 1. Предусловия проверяем до того, как занять слот в лимите.
-  const { data: strategy } = await admin.from("user_strategy").select("role, topics, content_types, tone, goals, formats").eq("user_id", userId).maybeSingle();
+  const { data: strategy } = await admin.from("user_strategy").select("role, topics, content_types, tone, goals, formats, answers").eq("user_id", userId).maybeSingle();
   const queries = queriesForTopics(strategy?.topics ?? []);
   if (!strategy || queries.length === 0) return json({ error: "Answer the setup questions and pick at least one topic first." }, 400);
 
@@ -179,12 +179,36 @@ Deno.serve(async (req) => {
     }
     const ownHours = rankHours(ownScored.map((p) => ({ at: p.postedAt, weight: p.score })), timeZone);
 
+    // Посты 3–4-дневной давности с лайками: образец того, что уже зашло, а не то, что только что запланировали.
+    const liked = pickLikedPosts(own, new Date());
+    if (liked.length > 0) {
+      const likedSources = liked.map((post) => toSource(post, "own", account.username));
+      sourcePosts = [...likedSources, ...sourcePosts.filter((post) => !likedSources.some((item) => item.id === post.id))].slice(0, 8);
+      exemplars = [...liked.map((post) => post.text), ...exemplars.filter((text) => !liked.some((post) => post.text === text))].slice(0, 6);
+    }
+
+    const { data: earlierDrafts } = await admin
+      .from("drafts")
+      .select("text")
+      .eq("user_id", userId)
+      .in("status", ["suggested", "draft", "scheduled", "published"])
+      .order("created_at", { ascending: false })
+      .limit(15);
+    const avoid = [...new Set([
+      ...(earlierDrafts ?? []).flatMap((row) => typeof row.text === "string" && row.text.trim() ? [row.text] : []),
+      ...own.slice(0, 8).map((post) => post.text),
+    ])];
+
     // 5. Варианты поста.
     const prompt = buildThreadPrompt({
       language: "English",
-      strategy: { role: strategy.role, topics: strategy.topics, contentTypes: strategy.content_types, tone: strategy.tone, goals: strategy.goals, formats: strategy.formats },
+      strategy: {
+        role: strategy.role, topics: strategy.topics,
+        audience: Array.isArray(strategy.answers?.audience) ? strategy.answers.audience.filter((x: unknown) => typeof x === "string") : [],
+        contentTypes: strategy.content_types, tone: strategy.tone, goals: strategy.goals, formats: strategy.formats,
+      },
       patterns, patternBasis: basis, exemplars,
-      avoid: own.slice(0, 6).map((p) => p.text),
+      avoid,
       variants: 3,
     });
     // Бесплатный роутер каждый раз выбирает случайную модель: часть отвечает пусто или не в том формате.

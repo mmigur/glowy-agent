@@ -1,111 +1,147 @@
-import { CAPABILITIES, PLATFORMS, type Availability, type MetricKey } from "@growth/core";
 import { useState } from "react";
-import { Badge } from "../../components/ui/badge";
-import { appCopy } from "../../lib/app-copy";
-import { useI18n } from "../../lib/i18n";
+import { Link } from "react-router-dom";
+import { buttonVariants } from "../../components/ui/button";
+import { appCopy, tError } from "../../lib/app-copy";
+import { useI18n, type Locale } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
-import { PageHeader } from "./PageHeader";
+import { useInsights, type InsightPoint } from "./useInsights";
+import { useSocialAccounts } from "./useSocialAccounts";
 
-const PERIODS = ["7d", "30d", "3m", "6m", "1y"] as const;
+const PERIODS = [7, 14, 30, 90] as const;
 
-const AVAILABILITY_TONE: Record<Availability, "solid" | "outline" | "muted"> = {
-  available: "solid",
-  conditional: "outline",
-  unavailable: "muted",
-  unverified: "muted",
-};
+function delta(current: number, previous: number): number | null {
+  if (previous <= 0) return current > 0 ? 100 : null;
+  return Math.round(((current - previous) / previous) * 100);
+}
 
-const METRIC_ORDER: MetricKey[] = [
-  "followers",
-  "followerHistory",
-  "impressions",
-  "likes",
-  "replies",
-  "reposts",
-  "quotes",
-  "reach",
-  "engagementRate",
-  "postCount",
-];
+function formatCount(value: number, locale: Locale): string {
+  return value.toLocaleString(locale === "ru" ? "ru-RU" : "en-US");
+}
 
 export function AnalyticsPage() {
   const { locale } = useI18n();
   const copy = appCopy[locale].analytics;
-  const [period, setPeriod] = useState<(typeof PERIODS)[number]>("30d");
+  const { state: accounts } = useSocialAccounts();
+  const [days, setDays] = useState<(typeof PERIODS)[number]>(30);
+  const connected = accounts.status === "ready" && accounts.accounts.some((account) => account.platform === "threads" && account.status === "active");
+  const report = useInsights(connected ? days : 0);
+  const data = connected ? report.data : undefined;
+
+  return (
+    <article id="insights-report">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold tracking-tight">{copy.title}</h1>
+        <div className="no-print flex flex-wrap items-center gap-2" role="group" aria-label={copy.period}>
+          {PERIODS.map((period) => (
+            <button
+              key={period}
+              type="button"
+              aria-pressed={days === period}
+              onClick={() => setDays(period)}
+              className={cn(
+                "h-7 rounded-md border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                days === period ? "border-foreground bg-foreground text-background" : "border-border-strong text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {copy.periods[String(period) as keyof typeof copy.periods]}
+            </button>
+          ))}
+          <button type="button" className={buttonVariants({ variant: "outline", size: "sm" })} onClick={() => window.print()}>
+            {copy.exportPdf}
+          </button>
+        </div>
+        <p className="hidden print:block text-sm text-muted-foreground">{copy.periods[String(days) as keyof typeof copy.periods]}</p>
+      </header>
+
+      {accounts.status === "loading" || (connected && !data && !report.error) ? (
+        <p className="text-sm text-muted-foreground" role="status">{copy.loading}</p>
+      ) : null}
+      {!connected && accounts.status !== "loading" ? (
+        <p className="text-sm">
+          {copy.connect}{" "}
+          <Link to="/app/settings" className="underline underline-offset-4">{copy.connectAction}</Link>
+        </p>
+      ) : null}
+      {report.error && connected ? <p role="alert" className="text-sm">{tError(report.error, locale)}</p> : null}
+
+      {data ? <Report data={data} locale={locale} /> : null}
+    </article>
+  );
+}
+
+function Report({
+  data,
+  locale,
+}: {
+  data: NonNullable<ReturnType<typeof useInsights>["data"]>;
+  locale: Locale;
+}) {
+  const copy = appCopy[locale].analytics;
+  const viewDelta = delta(data.views.total, data.views.previous);
+  const interactionDelta = delta(data.interactions.total, data.interactions.previous);
 
   return (
     <>
-      <PageHeader
-        title={copy.title}
-        description={copy.description}
-        actions={
-          <div role="tablist" aria-label={copy.period} className="flex rounded-md border border-border-strong p-0.5">
-            {PERIODS.map((p) => (
-              <button
-                key={p}
-                role="tab"
-                aria-selected={period === p}
-                onClick={() => setPeriod(p)}
-                className={cn(
-                  "h-7 rounded px-2.5 text-xs transition-colors",
-                  period === p ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {copy.periods[p]}
-              </button>
-            ))}
-          </div>
-        }
-      />
-
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
-        {(["followers", "impressions", "engagementRate", "postCount"] as const).map((key) => (
-          <div key={key} className="bg-background p-4">
-            <p className="text-xs text-muted-foreground">{copy.metrics[key]}</p>
-            <p className="mt-2 font-mono text-2xl text-muted-foreground" aria-label={copy.noData}>
-              —
-            </p>
-          </div>
-        ))}
-      </div>
-
-      <section className="mt-12" aria-labelledby="availability-heading">
-        <h2 id="availability-heading" className="text-sm font-medium">
-          {copy.availability}
-        </h2>
-        <p className="mt-1 max-w-xl text-sm text-muted-foreground">{copy.availabilityBody}</p>
-        <div className="mt-4 overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted text-left text-xs text-muted-foreground">
-                <th className="px-4 py-2 font-medium">{copy.metric}</th>
-                {PLATFORMS.map((p) => (
-                  <th key={p} className="px-4 py-2 font-medium">
-                    {CAPABILITIES[p].displayName}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {METRIC_ORDER.map((metric) => (
-                <tr key={metric}>
-                  <td className="px-4 py-2.5">{copy.metrics[metric]}</td>
-                  {PLATFORMS.map((p) => {
-                    const support = CAPABILITIES[p].metrics[metric];
-                    return (
-                      <td key={p} className="px-4 py-2.5" title={support.note}>
-                        <Badge tone={AVAILABILITY_TONE[support.availability]}>
-                          {copy.states[support.availability]}
-                        </Badge>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section aria-labelledby="insights-summary">
+        <h2 id="insights-summary" className="text-sm font-medium">{copy.summary}</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Card label={copy.views} hint={copy.viewsHint} value={formatCount(data.views.total, locale)} change={viewDelta} note={copy.vsPrevious} />
+          <Card label={copy.interactions} hint={copy.interactionsHint} value={formatCount(data.interactions.total, locale)} change={interactionDelta} note={copy.vsPrevious} />
+          <Card label={copy.followers} hint={copy.followersHint} value={data.followers === null ? "—" : formatCount(data.followers, locale)} change={null} note="" />
+          <Card label={copy.clicks} hint="" value={data.clicks === null ? "—" : formatCount(data.clicks, locale)} change={null} note="" />
         </div>
       </section>
+
+      <section className="mt-8" aria-label={copy.chart}>
+        <ViewsChart points={data.views.series} locale={locale} />
+      </section>
     </>
+  );
+}
+
+function Card({ label, hint, value, change, note }: { label: string; hint: string; value: string; change: number | null; note: string }) {
+  const up = change !== null && change >= 0;
+  return (
+    <div className="rounded-xl bg-muted p-4">
+      <p className="text-sm text-muted-foreground" title={hint}>{label}</p>
+      <p className="mt-2 text-3xl font-semibold tracking-tight">{value}</p>
+      {change !== null ? (
+        <p className={cn("mt-1 text-sm", up ? "text-[#16a34a]" : "text-foreground")}>
+          {up ? "+" : ""}{change}% <span className="text-muted-foreground">{note}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ViewsChart({ points, locale }: { points: InsightPoint[]; locale: Locale }) {
+  const width = 640;
+  const height = 180;
+  const pad = 8;
+  const values = points.map((point) => point.value);
+  const max = Math.max(...values, 1);
+  const step = points.length > 1 ? (width - pad * 2) / (points.length - 1) : 0;
+  const coords = points.map((point, index) => {
+    const x = pad + index * step;
+    const y = height - pad - (point.value / max) * (height - pad * 2);
+    return `${x},${y}`;
+  });
+  const line = coords.join(" ");
+  const area = points.length > 0 ? `${pad},${height - pad} ${line} ${pad + (points.length - 1) * step},${height - pad}` : "";
+  const tag = locale === "ru" ? "ru-RU" : "en-US";
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-48 w-full" role="img">
+        <polygon points={area} fill="currentColor" opacity="0.12" />
+        <polyline points={line} fill="none" stroke="currentColor" strokeWidth="2" />
+      </svg>
+      <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+        <span>{first ? new Date(first.end).toLocaleDateString(tag, { day: "numeric", month: "short" }) : ""}</span>
+        <span>{last ? new Date(last.end).toLocaleDateString(tag, { day: "numeric", month: "short" }) : ""}</span>
+      </div>
+    </div>
   );
 }

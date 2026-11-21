@@ -7,7 +7,7 @@ import { appCopy, tError } from "../../lib/app-copy";
 import { fill, useI18n } from "../../lib/i18n";
 import { useSocialAccounts, type SocialAccountRow } from "./useSocialAccounts";
 
-/** Какие платформы уже умеют подключаться. X добавится в Phase 6. */
+/** Подключается только Threads. */
 const CONNECTABLE: Record<Platform, boolean> = { threads: true, x: false };
 
 type Notice = { tone: "ok" | "error"; code: string };
@@ -72,10 +72,7 @@ export function ConnectionsSection() {
         ? copy.connectedOk
         : (copy.errors[notice.code as keyof typeof copy.errors] ?? (notice.tone === "error" ? tError(notice.code, locale) : notice.code))
     : null;
-  const notes: Record<Platform, { publish: string; research: string }> = {
-    threads: { publish: copy.threadsPublish, research: copy.threadsResearch },
-    x: { publish: copy.xPublish, research: copy.xResearch },
-  };
+  const notes = { publish: copy.threadsPublish, research: copy.threadsResearch };
 
   return (
     <div>
@@ -97,7 +94,7 @@ export function ConnectionsSection() {
       ) : null}
 
       <ul className="divide-y divide-border rounded-lg border border-border">
-        {PLATFORMS.map((platform) => {
+        {PLATFORMS.filter((platform) => platform === "threads").map((platform) => {
           const cap = CAPABILITIES[platform];
           const connected = accounts.filter((a) => a.platform === platform);
           const canConnect = CONNECTABLE[platform];
@@ -107,8 +104,8 @@ export function ConnectionsSection() {
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{cap.displayName}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{notes[platform].publish}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{copy.research}: {notes[platform].research}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{notes.publish}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{copy.research}: {notes.research}</p>
                 </div>
                 {connected.length === 0 ? (
                   <div className="flex shrink-0 flex-col items-end gap-2">
@@ -117,7 +114,6 @@ export function ConnectionsSection() {
                       size="sm"
                       variant="outline"
                       disabled={!canConnect || state.status === "loading" || busy === platform}
-                      title={canConnect ? undefined : copy.xLater}
                       onClick={() => void onConnect(platform)}
                     >
                       {busy === platform ? copy.redirecting : copy.connect}
