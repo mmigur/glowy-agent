@@ -1,0 +1,170 @@
+import { ONBOARDING_QUESTIONS, emptyAnswers, toggleAnswer, type OnboardingAnswers } from "@growth/core";
+import { Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Logo } from "../../components/Logo";
+import { ThemeToggle } from "../../components/ThemeToggle";
+import { Button } from "../../components/ui/button";
+import { cn } from "../../lib/utils";
+import { useStrategy } from "./useStrategy";
+
+export function OnboardingPage() {
+  const navigate = useNavigate();
+  const { state, save } = useStrategy();
+  const [answers, setAnswers] = useState<OnboardingAnswers>(emptyAnswers);
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const initialised = useRef(false);
+
+  // Один раз подставляем уже сохранённые ответы (повторное открытие или редактирование).
+  useEffect(() => {
+    if (state.status === "ready" && !initialised.current) {
+      initialised.current = true;
+      setAnswers(state.answers);
+    }
+  }, [state]);
+
+  if (state.status === "loading") {
+    return (
+      <div className="grid min-h-screen place-items-center text-sm text-muted-foreground" role="status">
+        Loading…
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="grid min-h-screen place-items-center px-6">
+        <div className="text-center">
+          <p role="alert" className="text-sm text-danger">
+            {state.message}
+          </p>
+          <Link to="/app" className="mt-3 inline-block text-sm underline underline-offset-4">
+            Back to the app
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const total = ONBOARDING_QUESTIONS.length;
+  const question = ONBOARDING_QUESTIONS[step];
+  if (!question) return null;
+  const selected = answers[question.id];
+  const isLast = step === total - 1;
+  const editing = state.completed;
+
+  async function advance(next: OnboardingAnswers) {
+    setSaving(true);
+    setError(null);
+    // Каждый шаг сохраняется сразу: если закрыть вкладку, прогресс не потеряется.
+    const message = await save(next, { complete: isLast });
+    setSaving(false);
+    if (message) {
+      setError(message);
+      return;
+    }
+    if (isLast) navigate("/app", { replace: true });
+    else setStep((s) => s + 1);
+  }
+
+  function choose(optionId: string) {
+    if (!question) return;
+    setAnswers((prev) => ({ ...prev, [question.id]: toggleAnswer(question, prev[question.id], optionId) }));
+  }
+
+  function skip() {
+    if (!question) return;
+    void advance({ ...answers, [question.id]: [] });
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <header className="flex h-14 items-center justify-between border-b border-border px-6">
+        <Logo />
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <Link
+            to="/app"
+            className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Exit
+          </Link>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-xl flex-1 px-6 py-12">
+        <div
+          className="flex gap-1.5"
+          role="progressbar"
+          aria-label="Setup progress"
+          aria-valuemin={1}
+          aria-valuemax={total}
+          aria-valuenow={step + 1}
+        >
+          {ONBOARDING_QUESTIONS.map((q, i) => (
+            <span key={q.id} className={cn("h-0.5 flex-1 rounded-full", i <= step ? "bg-foreground" : "bg-border")} />
+          ))}
+        </div>
+        <p className="mt-4 font-mono text-xs text-muted-foreground">
+          {step + 1} / {total}
+          {editing ? " · Editing your strategy" : ""}
+        </p>
+
+        <div key={question.id} className="fade-up">
+          <h1 className="mt-6 text-3xl font-semibold tracking-tight">{question.title}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{question.hint}</p>
+
+          <div
+            role={question.kind === "single" ? "radiogroup" : "group"}
+            aria-label={question.title}
+            className="mt-8 grid gap-2"
+          >
+            {question.options.map((option) => {
+              const checked = selected.includes(option.id);
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role={question.kind === "single" ? "radio" : "checkbox"}
+                  aria-checked={checked}
+                  onClick={() => choose(option.id)}
+                  className={cn(
+                    "flex h-11 items-center justify-between rounded-md border px-4 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    checked
+                      ? "border-foreground bg-muted font-medium"
+                      : "border-border-strong hover:border-foreground/60 hover:bg-muted",
+                  )}
+                >
+                  {option.label}
+                  {checked ? <Check className="size-4" aria-hidden /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {error ? (
+          <p role="alert" className="mt-4 text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-8 flex items-center justify-between">
+          <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0 || saving}>
+            Back
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={skip} disabled={saving}>
+              Skip
+            </Button>
+            <Button onClick={() => void advance(answers)} disabled={saving || selected.length === 0}>
+              {saving ? "Saving…" : isLast ? (editing ? "Save" : "Finish") : "Continue"}
+            </Button>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

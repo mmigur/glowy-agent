@@ -1,0 +1,20 @@
+{
+  "name": "growth-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "supabase/tests"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @growth/web",
+    "build": "npm run build -w @growth/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

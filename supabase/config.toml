@@ -1,0 +1,22 @@
+# Минимальная конфигурация проекта для Supabase CLI.
+project_id = "growth-agent"
+
+# Пользователь приходит на этот адрес из браузера без токена приложения,
+# поэтому проверка JWT отключена. Защита: одноразовый state (таблица oauth_states).
+[functions.threads-oauth-callback]
+verify_jwt = false
+
+[functions.threads-connect-start]
+verify_jwt = true
+
+[functions.threads-deauthorize]
+verify_jwt = false
+
+[functions.threads-data-deletion]
+verify_jwt = false
+
+[functions.agent-thread-run]
+verify_jwt = true
+
+[functions.publish-due]
+verify_jwt = false
